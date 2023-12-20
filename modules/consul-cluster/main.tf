@@ -3,20 +3,20 @@
 # ----------------------------------------------------------------------------------------------------------------------
 
 terraform {
-  # This module is now only being tested with Terraform 1.0.x. However, to make upgrading easier, we are setting
-  # 0.12.26 as the minimum version, as that version added support for required_providers with source URLs, making it
-  # forwards compatible with 1.0.x code.
   required_version = ">= 0.12.26"
 }
 
 # ---------------------------------------------------------------------------------------------------------------------
-# CREATE AN AUTO SCALING GROUP (ASG) TO RUN CONSUL
+# CREATE AN AUTO SCALING GROUP (ASG) TO RUN CONSUL USING LAUNCH TEMPLATE
 # ---------------------------------------------------------------------------------------------------------------------
 
 resource "aws_autoscaling_group" "autoscaling_group" {
   name_prefix = var.cluster_name
 
-  launch_configuration = aws_launch_configuration.launch_configuration.name
+  launch_template {
+    id      = aws_launch_template.launch_template.id
+    version = "$Latest"
+  }
 
   availability_zones  = var.availability_zones
   vpc_zone_identifier = var.subnet_ids
@@ -36,21 +36,27 @@ resource "aws_autoscaling_group" "autoscaling_group" {
 
   protect_from_scale_in = var.protect_from_scale_in
 
-  tags = flatten(
-    [
-      {
-        key                 = "Name"
-        value               = var.cluster_name
-        propagate_at_launch = true
-      },
-      {
-        key                 = var.cluster_tag_key
-        value               = var.cluster_tag_value
-        propagate_at_launch = true
-      },
-      var.tags,
-    ]
-  )
+  tag {
+    key                 = "Name"
+    value               = var.cluster_name
+    propagate_at_launch = true
+  }
+
+  tag {
+    key                 = var.cluster_tag_key
+    value               = var.cluster_tag_value
+    propagate_at_launch = true
+  }
+
+  dynamic "tag" {
+    for_each = var.tags
+
+    content {
+      key                 = tag.value["key"]
+      value               = tag.value["value"]
+      propagate_at_launch = tag.value["propagate_at_launch"]
+    }
+  }
 
   dynamic "initial_lifecycle_hook" {
     for_each = var.lifecycle_hooks
@@ -67,58 +73,71 @@ resource "aws_autoscaling_group" "autoscaling_group" {
   }
 
   lifecycle {
-    # As of AWS Provider 3.x, inline load_balancers and target_group_arns
-    # in an aws_autoscaling_group take precedence over attachment resources.
-    # Since the consul-cluster module does not define any Load Balancers,
-    # it's safe to assume that we will always want to favor an attachment
-    # over these inline properties.
-    #
-    # For further discussion and links to relevant documentation, see
-    # https://github.com/hashicorp/terraform-aws-vault/issues/210
     ignore_changes = [load_balancers, target_group_arns]
   }
 }
 
 # ---------------------------------------------------------------------------------------------------------------------
-# CREATE LAUNCH CONFIGURATION TO DEFINE WHAT RUNS ON EACH INSTANCE IN THE ASG
+# CREATE LAUNCH TEMPLATE TO DEFINE WHAT RUNS ON EACH INSTANCE IN THE ASG
 # ---------------------------------------------------------------------------------------------------------------------
 
-resource "aws_launch_configuration" "launch_configuration" {
+resource "aws_launch_template" "launch_template" {
   name_prefix   = "${var.cluster_name}-"
   image_id      = var.ami_id
   instance_type = var.instance_type
   user_data     = var.user_data
-  spot_price    = var.spot_price
+  key_name      = var.ssh_key_name
 
-  iam_instance_profile = var.enable_iam_setup ? element(
-    concat(aws_iam_instance_profile.instance_profile.*.name, [""]),
-    0,
-  ) : var.iam_instance_profile_name
-  key_name = var.ssh_key_name
+  # Spot price configuration
+  instance_market_options{
+  spot_options {
+    max_price = var.spot_price
+    }
+  }
+  iam_instance_profile {
+    name = var.enable_iam_setup ? aws_iam_instance_profile.instance_profile.name : var.iam_instance_profile_name
+  }
 
-  security_groups = concat(
+  vpc_security_group_ids = concat(
     [aws_security_group.lc_security_group.id],
-    var.additional_security_group_ids,
+    var.additional_security_group_ids
   )
-  placement_tenancy           = var.tenancy
-  associate_public_ip_address = var.associate_public_ip_address
+
+  network_interfaces {
+    associate_public_ip_address = var.associate_public_ip_address
+    security_groups = [
+      aws_security_group.lc_security_group.id
+    ]
+  }
 
   ebs_optimized = var.root_volume_ebs_optimized
 
-  root_block_device {
-    volume_type           = var.root_volume_type
-    volume_size           = var.root_volume_size
-    delete_on_termination = var.root_volume_delete_on_termination
-    encrypted             = var.root_volume_encrypted
+  block_device_mappings {
+    device_name = "/dev/sda1"
+    ebs {
+      volume_size           = var.root_volume_size
+      volume_type           = var.root_volume_type
+      delete_on_termination = var.root_volume_delete_on_termination
+      encrypted             = var.root_volume_encrypted
+    }
   }
 
-  # Important note: whenever using a launch configuration with an auto scaling group, you must set
-  # create_before_destroy = true. However, as soon as you set create_before_destroy = true in one resource, you must
-  # also set it in every resource that it depends on, or you'll get an error about cyclic dependencies (especially when
-  # removing resources). For more info, see:
-  #
-  # https://www.terraform.io/docs/providers/aws/r/launch_configuration.html
-  # https://terraform.io/docs/configuration/resources.html
+  # Additional EBS block device mappings
+  dynamic "block_device_mappings" {
+    for_each = var.ebs_block_devices
+
+    content {
+      device_name = block_device_mappings.value["device_name"]
+      ebs {
+        volume_size           = block_device_mappings.value["volume_size"]
+        snapshot_id           = lookup(block_device_mappings.value, "snapshot_id", null)
+        iops                  = lookup(block_device_mappings.value, "iops", null)
+        encrypted             = lookup(block_device_mappings.value, "encrypted", null)
+        delete_on_termination = lookup(block_device_mappings.value, "delete_on_termination", null)
+      }
+    }
+  }
+
   lifecycle {
     create_before_destroy = true
   }

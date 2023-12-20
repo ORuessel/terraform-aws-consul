@@ -280,6 +280,27 @@ variable "tags" {
   default     = []
 }
 
+variable "ebs_block_devices" {
+  description = "List of ebs volume definitions for those ebs_volumes that should be added to the instances created with the EC2 launch-configuration. Each element in the list is a map containing keys defined for ebs_block_device (see: https://www.terraform.io/docs/providers/aws/r/launch_configuration.html#ebs_block_device."
+  # We can't narrow the type down more than "any" because if we use list(object(...)), then all the fields in the
+  # object will be required (whereas some, such as encrypted, should be optional), and if we use list(map(...)), all
+  # the values in the map must be of the same type, whereas we need some to be strings, some to be bools, and some to
+  # be ints. So, we have to fall back to just any ugly "any."
+  type    = any
+  default = []
+  # Example:
+  #
+  # default = [
+  #   {
+  #     device_name = "/dev/xvdh"
+  #     volume_type = "gp2"
+  #     volume_size = 300
+  #     encrypted   = true
+  #   }
+  # ]
+}
+
+
 variable "enabled_metrics" {
   description = "List of autoscaling group metrics to enable."
   type        = list(string)

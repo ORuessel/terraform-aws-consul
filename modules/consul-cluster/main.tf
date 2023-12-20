@@ -83,10 +83,10 @@ resource "aws_autoscaling_group" "autoscaling_group" {
 # ---------------------------------------------------------------------------------------------------------------------
 
 resource "aws_launch_template" "launch_template" {
-  name_prefix   = "${var.cluster_name}-"
+  name_prefix   = var.cluster_name
   image_id      = var.ami_id
   instance_type = var.instance_type
-  user_data     = var.user_data
+  user_data     = base64encode(var.user_data)
   key_name      = var.ssh_key_name
 
   # Spot price configuration
@@ -96,6 +96,10 @@ resource "aws_launch_template" "launch_template" {
     }
   }
 
+  placement {
+    tenancy = var.tenancy # Can be "default", "dedicated", or "host"
+  }
+  
    # Correcting the iam_instance_profile attribute
   iam_instance_profile {
     name = var.enable_iam_setup ? element(concat(aws_iam_instance_profile.instance_profile.*.name, [""]), 0) : var.iam_instance_profile_name

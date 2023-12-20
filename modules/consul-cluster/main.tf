@@ -105,16 +105,12 @@ resource "aws_launch_template" "launch_template" {
     name = var.enable_iam_setup ? element(concat(aws_iam_instance_profile.instance_profile.*.name, [""]), 0) : var.iam_instance_profile_name
   }
 
-  vpc_security_group_ids = concat(
-    [aws_security_group.lc_security_group.id],
-    var.additional_security_group_ids
-  )
-
   network_interfaces {
     associate_public_ip_address = var.associate_public_ip_address
-    security_groups = [
-      aws_security_group.lc_security_group.id
-    ]
+    security_groups =  concat(
+    [aws_security_group.lc_security_group.id],
+    var.additional_security_group_ids)
+    
   }
 
   ebs_optimized = var.root_volume_ebs_optimized

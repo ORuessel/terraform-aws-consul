@@ -94,8 +94,10 @@ resource "aws_launch_template" "launch_template" {
     max_price = var.spot_price
     }
   }
+
+   # Correcting the iam_instance_profile attribute
   iam_instance_profile {
-    name = var.enable_iam_setup ? aws_iam_instance_profile.instance_profile.name : var.iam_instance_profile_name
+    name = var.enable_iam_setup ? element(concat(aws_iam_instance_profile.instance_profile.*.name, [""]), 0) : var.iam_instance_profile_name
   }
 
   vpc_security_group_ids = concat(

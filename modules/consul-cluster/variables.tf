@@ -196,7 +196,7 @@ variable "root_volume_delete_on_termination" {
   default     = true
 }
 
-variable "root_volume_encrypted" {
+variable "root_volume_encryption" {
   description = "Encrypt the root volume at rest"
   type        = bool
   default     = false

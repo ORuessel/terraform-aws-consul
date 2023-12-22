@@ -121,7 +121,7 @@ resource "aws_launch_template" "launch_template" {
       volume_size           = var.root_volume_size
       volume_type           = var.root_volume_type
       delete_on_termination = var.root_volume_delete_on_termination
-      encrypted             = var.root_volume_encrypted
+      encrypted             = var.root_volume_encryption
     }
   }
 

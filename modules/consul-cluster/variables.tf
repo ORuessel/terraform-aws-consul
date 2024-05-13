@@ -202,6 +202,12 @@ variable "root_volume_encryption" {
   default     = false
 }
 
+variable "root_volume_kms_key_id" {
+  description = "Encrypt the root volume at rest"
+  type        = bool
+  default     = false
+}
+
 variable "wait_for_capacity_timeout" {
   description = "A maximum duration that Terraform should wait for ASG instances to be healthy before timing out. Setting this to '0' causes Terraform to skip all Capacity Waiting behavior."
   type        = string

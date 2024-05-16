@@ -122,6 +122,7 @@ resource "aws_launch_template" "launch_template" {
       volume_type           = var.root_volume_type
       delete_on_termination = var.root_volume_delete_on_termination
       encrypted             = var.root_volume_encryption
+      kms_key_id            = var.root_volume_kms_key_id
     }
   }
 
@@ -137,6 +138,7 @@ resource "aws_launch_template" "launch_template" {
         iops                  = lookup(block_device_mappings.value, "iops", null)
         encrypted             = lookup(block_device_mappings.value, "encrypted", null)
         delete_on_termination = lookup(block_device_mappings.value, "delete_on_termination", null)
+        kms_key_id            = lookup(block_device_mappings.value, "kms_key_id", null)
       }
     }
   }

@@ -204,8 +204,8 @@ variable "root_volume_encryption" {
 
 variable "root_volume_kms_key_id" {
   description = "Encrypt the root volume at rest"
-  type        = bool
-  default     = false
+  type        = string
+  default     = ""
 }
 
 variable "wait_for_capacity_timeout" {

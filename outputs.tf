@@ -57,3 +57,8 @@ output "consul_servers_cluster_tag_key" {
 output "consul_servers_cluster_tag_value" {
   value = module.consul_servers.cluster_tag_value
 }
+
+output "join_servers" {
+  description = "Die für den Cluster verwendete Join-Liste (Multi-Region Support)."
+  value       = var.join_servers
+}

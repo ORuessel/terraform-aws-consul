@@ -10,6 +10,6 @@ set -e
 exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1
 
 # These variables are passed in via Terraform template interplation
-/opt/consul/bin/run-consul --client --cluster-tag-key "${cluster_tag_key}" --cluster-tag-value "${cluster_tag_value}"
+/opt/consul/bin/run-consul --client --cluster-tag-key "${cluster_tag_key}" --cluster-tag-value "${cluster_tag_value}" --retry-join "${join(",", join_servers)}"
 
 # You could add commands to boot your other apps here

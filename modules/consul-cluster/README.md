@@ -393,3 +393,116 @@ module.
 This module does not create any DNS entries for Consul (e.g. in Route 53).
 
 
+## Multi-Region (Globaler Cluster)
+
+Dieses Modul unterstützt Multi-Region-Setups über die `join_servers` Variable.
+
+- Die Variable `join_servers` enthält alle relevanten Server-Adressen (DNS oder IP) aus allen Regionen für einen globalen Cluster.
+- Das User-Data-Skript (Parameter `user_data`) muss entsprechend angepasst werden, um die `join_servers` zu verwenden.
+- Es wird empfohlen, DNS-Namen statt IP-Adressen für bessere Flexibilität zu verwenden.
+
+**Beispiel für ein User-Data-Template (Ausschnitt):**
+
+```bash
+/opt/consul/bin/run-consul --server --cluster-tag-key "${cluster_tag_key}" --cluster-tag-value "${cluster_tag_value}" \
+  --datacenter "${datacenter}" --retry-join "${join(",", join_servers)}"
+```
+
+Weitere Details und Best Practices siehe Haupt-README und `MULTIREGION-IMPLEMENTATION-PLAN.md`.
+
+
+## DNS Self-Registration & Dynamische Index-Bestimmung via Tagging
+
+Für produktive Multi-Region-Setups wird empfohlen, dass jede Instanz beim Booten ihren eigenen DNS-Record in Route53 registriert. So bleibt die Join-Liste immer aktuell, auch bei automatischem Ersatz einzelner Server.
+
+- **Namenskonvention für DNS-Hostnamen:**
+  - `<customer>-<environment>-consul-server-<index>-<region>.<domain>`
+  - Nur Kleinbuchstaben, Bindestrich, keine Unterstriche, keine Produktnamen, keine Großbuchstaben.
+  - Beispiel: `bofa-prod-consul-server-1-eu-central-1.example.com`
+- **Dynamische Index-Bestimmung via Tagging:**
+  - Die Auto Scaling Group (ASG) vergibt beim Launch den Tag `ServerIndex`.
+  - Die Instanz liest beim Booten ihren Index aus dem Tag `ServerIndex` aus und registriert sich mit genau diesem Index als DNS-Record.
+
+**Beispiel: Tagging im Terraform ASG**
+```hcl
+resource "aws_autoscaling_group" "consul" {
+  # ...
+  dynamic "tag" {
+    for_each = toset([for idx in range(var.servers_per_region) : idx + 1])
+    content {
+      key                 = "ServerIndex"
+      value               = tag.value
+      propagate_at_launch = true
+    }
+  }
+  # ...
+}
+```
+
+**Beispiel: Dynamische Index-Auslese & DNS-Registrierung im User-Data (Bash)**
+```bash
+CUSTOMER="bofa"
+ENVIRONMENT="prod"
+SERVICE="consul"
+REGION=$(curl -s http://169.254.169.254/latest/dynamic/instance-identity/document | jq -r .region)
+INSTANCE_ID=$(curl -s http://169.254.169.254/latest/meta-data/instance-id)
+DOMAIN="example.com"
+PRIVATE_IP=$(curl -s http://169.254.169.254/latest/meta-data/local-ipv4)
+INDEX=$(aws ec2 describe-tags --region $REGION --filters "Name=resource-id,Values=$INSTANCE_ID" "Name=key,Values=ServerIndex" --query 'Tags[0].Value' --output text)
+if [[ -z "$INDEX" || "$INDEX" == "None" ]]; then
+  echo "ERROR: ServerIndex tag not found for instance $INSTANCE_ID"
+  exit 1
+fi
+DNS_NAME="${CUSTOMER}-${ENVIRONMENT}-${SERVICE}-server-${INDEX}-${REGION}.${DOMAIN}"
+DNS_NAME=$(echo "$DNS_NAME" | tr '[:upper:]' '[:lower:]')
+
+aws route53 change-resource-record-sets --region $REGION --hosted-zone-id $ROUTE53_ZONE_ID --change-batch "{
+  \"Changes\": [{
+    \"Action\": \"UPSERT\",
+    \"ResourceRecordSet\": {
+      \"Name\": \"$DNS_NAME\",
+      \"Type\": \"A\",
+      \"TTL\": 60,
+      \"ResourceRecords\": [{\"Value\": \"$PRIVATE_IP\"}]
+    }
+  }]
+}"
+```
+
+**Vorteile:**
+- Ersatz-Server behalten ihren Index und Hostnamen
+- Keine Kollisionen, keine manuelle Pflege
+- Join-Liste bleibt immer konsistent
+
+
+## Multi-Region Support (`join_servers`)
+
+Dieses Modul unterstützt Multi-Region-Setups über die Variable `join_servers`. Damit können Sie einen globalen Consul/Nomad-Cluster über mehrere AWS-Regionen hinweg betreiben (Direct Join, keine Federation).
+
+- **Single-Region:** Die Join-Liste enthält nur die Server der eigenen Region (Standard, rückwärtskompatibel).
+- **Multi-Region:** Die Join-Liste enthält alle relevanten Server (DNS oder IP) aus allen Regionen.
+
+**Beispiel für tfvars (Single-Region):**
+```hcl
+join_servers = [
+  "consul-nomad-1.eu-central-1.example.com",
+  "consul-nomad-2.eu-central-1.example.com"
+]
+```
+
+**Beispiel für tfvars (Multi-Region):**
+```hcl
+join_servers = [
+  "consul-nomad-1.eu-central-1.example.com",
+  "consul-nomad-2.eu-central-1.example.com",
+  "consul-nomad-1.eu-west-1.example.com",
+  "consul-nomad-2.eu-west-1.example.com"
+]
+```
+
+**Rückwärtskompatibilität:**  
+Wenn `join_servers` leer bleibt oder nur Server aus einer Region enthält, verhält sich das Deployment wie bisher (Single-Region). Bestehende Deployments funktionieren ohne Anpassung weiter.
+
+Weitere Details und Best Practices siehe [MULTIREGION-IMPLEMENTATION-PLAN.md](../../MULTIREGION-IMPLEMENTATION-PLAN.md).
+
+

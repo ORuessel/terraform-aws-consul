@@ -76,6 +76,7 @@ module "consul_servers" {
   user_data = templatefile("${path.module}/examples/root-example/user-data-server.sh", {
     cluster_tag_key   = var.cluster_tag_key
     cluster_tag_value = var.cluster_name
+    join_servers      = var.join_servers
   })
 
   vpc_id     = data.aws_vpc.default.id
@@ -90,6 +91,7 @@ module "consul_servers" {
 
   allowed_inbound_cidr_blocks = ["0.0.0.0/0"]
   ssh_key_name                = var.ssh_key_name
+  join_servers                = var.join_servers
 
   tags = [
     {
@@ -125,6 +127,7 @@ module "consul_clients" {
   user_data = templatefile("${path.module}/examples/root-example/user-data-client.sh", {
     cluster_tag_key   = var.cluster_tag_key
     cluster_tag_value = var.cluster_name
+    join_servers      = var.join_servers
   })
 
   vpc_id     = data.aws_vpc.default.id
@@ -136,6 +139,7 @@ module "consul_clients" {
 
   allowed_inbound_cidr_blocks = ["0.0.0.0/0"]
   ssh_key_name                = var.ssh_key_name
+  join_servers                = var.join_servers
 }
 
 # ---------------------------------------------------------------------------------------------------------------------

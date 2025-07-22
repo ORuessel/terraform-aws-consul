@@ -348,3 +348,13 @@ variable "protect_from_scale_in" {
   type        = bool
   default     = false
 }
+
+# ---------------------------------------------------------------------------------------------------------------------
+# GLOBAL CLUSTER JOIN SERVERS (Direct Join)
+# ---------------------------------------------------------------------------------------------------------------------
+
+variable "join_servers" {
+  description = "List of all Consul server addresses (DNS or IP) to join for a global cluster across regions."
+  type        = list(string)
+  default     = []
+}

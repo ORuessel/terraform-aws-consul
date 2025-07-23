@@ -103,8 +103,8 @@ Example:
 # Single-region cluster (using AWS provider discovery)
 /opt/consul/bin/run-consul --server --cluster-tag-key consul-cluster --cluster-tag-value prod-cluster
 
-# Multi-region cluster (using static retry-join list)
-/opt/consul/bin/run-consul --server --datacenter eu-central-1 --retry-join "server1.eu-central-1.example.com,server2.eu-central-1.example.com,server1.eu-west-2.example.com,server2.eu-west-2.example.com"
+# Multi-region cluster (using static retry-join list) - datacenter automatically set to "global"
+/opt/consul/bin/run-consul --server --retry-join "server1.eu-central-1.example.com,server2.eu-central-1.example.com,server1.eu-west-2.example.com,server2.eu-west-2.example.com"
 ```
 
 
@@ -139,9 +139,11 @@ available.
 * [client_addr](https://www.consul.io/docs/agent/options.html#client_addr): Set to 0.0.0.0 so you can access the client
   and UI endpoint on each EC2 Instance from the outside.
 
-* [datacenter](https://www.consul.io/docs/agent/options.html#datacenter): Set to the current AWS region (e.g. 
-  `us-east-1`), as fetched from [Metadata](http://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-instance-metadata.html).
-  If the `--datacenter` flag is provided, then that value is used instead.
+* [datacenter](https://www.consul.io/docs/agent/options.html#datacenter): 
+    * **Multi-Region Direct Join:** If `--retry-join` is used, automatically set to `"global"` for all servers across all regions to enable LAN clustering.
+    * **Federation:** Each region uses its own datacenter (AWS region name), connected via WAN federation.
+    * **Single-Region:** Set to the current AWS region (e.g. `us-east-1`), as fetched from [Metadata](http://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-instance-metadata.html).
+    * If the `--datacenter` flag is explicitly provided, then that value is used instead.
 
 * [node_name](https://www.consul.io/docs/agent/options.html#node_name): Set to the instance id, as fetched from 
   [Metadata](http://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-instance-metadata.html).

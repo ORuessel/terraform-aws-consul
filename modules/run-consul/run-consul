@@ -670,7 +670,15 @@ function run {
   fi
 
   if [[ -z "$datacenter" ]]; then
-    datacenter=$(get_instance_region)
+    if [[ -n "$retry_join" ]]; then
+      # For Multi-Region Direct Join, use a common datacenter name
+      datacenter="global"
+      log_info "Multi-Region Direct Join detected: Setting datacenter to 'global' for all regions"
+    else
+      # Single-region or Federation: use AWS region as datacenter
+      datacenter=$(get_instance_region)
+      log_info "Single-region or Federation cluster: Using AWS region '$datacenter' as datacenter"
+    fi
   fi
 
   if [[ "$skip_consul_config" == "true" ]]; then

@@ -53,6 +53,7 @@ function print_usage {
   echo -e "  --environment\t\tA single environment variable in the key/value pair form 'KEY=\"val\"' to pass to Consul as environment variable when starting it up. Repeat this option for additional variables. Optional."
   echo -e "  --skip-consul-config\tIf this flag is set, don't generate a Consul configuration file. Optional. Default is false."
   echo -e "  --recursor\tThis flag provides address of upstream DNS server that is used to recursively resolve queries if they are not inside the service domain for Consul. Repeat this option for additional variables. Optional."
+  echo -e "  --retry-join\t\tA comma-separated list of Consul server addresses (IP or DNS) for Multi-Region Direct Join. When set, overrides AWS provider discovery. Optional."
   echo -e "  --wan-join\t\tA comma-separated list of Consul server addresses (IP or DNS) to join via WAN federation. Optional."
   echo
   echo "Options for Consul Autopilot:"
@@ -212,6 +213,7 @@ function split_by_lines {
 }
 
 function generate_consul_config {
+  
   local -r server="${1}"
   local -r config_dir="${2}"
   local -r user="${3}"
@@ -231,12 +233,19 @@ function generate_consul_config {
   local -r server_stabilization_time="${17}"
   local -r redundancy_zone_tag="${18}"
   local -r disable_upgrade_migration="${19}"
-  local -r upgrade_version_tag=${20}
-  local -r retry_join_wan_json="$21"
+  local -r upgrade_version_tag="${20:-""}"
+  local -r retry_join_wan_json="${21}"
+  local -r recursors_string="${22}"
+  local -r retry_join_lan="${23}"
   local -r config_path="$config_dir/$CONSUL_CONFIG_FILE"
+  
 
-  shift 21
-  local -r recursors=("$@")
+
+  # Convert recursors string back to array
+  local recursors=()
+  if [[ -n "$recursors_string" ]]; then
+    IFS=',' read -ra recursors <<< "$recursors_string"
+  fi
 
   local instance_id=""
   local instance_ip_address=""
@@ -249,9 +258,22 @@ function generate_consul_config {
   instance_region=$(get_instance_region)
 
   local retry_join_json=""
-  if [[ -z "$cluster_tag_key" || -z "$cluster_tag_value" ]]; then
+  if [[ -n "$retry_join_lan" ]]; then
+    # Use static retry_join list for Multi-Region Direct Join
+    log_info "Using static retry_join list for Multi-Region Direct Join"
+    # Convert comma-separated string to JSON array
+    IFS=',' read -ra ADDR <<< "$retry_join_lan"
+    retry_join_json="\"retry_join\": ["
+    for i in "${ADDR[@]}"; do
+      retry_join_json+="\"$i\"," 
+    done
+    retry_join_json=${retry_join_json%,}
+    retry_join_json+="],"
+  elif [[ -z "$cluster_tag_key" || -z "$cluster_tag_value" ]]; then
     log_warn "Either the cluster tag key ($cluster_tag_key) or value ($cluster_tag_value) is empty. Will not automatically try to form a cluster based on EC2 tags."
   else
+    # Use AWS provider discovery for single-region clusters
+    log_info "Using AWS provider discovery for single-region cluster"
     retry_join_json=$(cat <<EOF
 "retry_join": ["provider=aws region=$instance_region tag_key=$cluster_tag_key tag_value=$cluster_tag_value"],
 EOF
@@ -275,13 +297,23 @@ EOF
 
   local bootstrap_expect=""
   if [[ "$server" == "true" ]]; then
-    local instance_tags=""
-    local cluster_size=""
+    if [[ -n "$retry_join_lan" ]]; then
+      # For Multi-Region Direct Join, calculate total cluster size from retry_join list
+      IFS=',' read -ra join_servers <<< "$retry_join_lan"
+      local total_servers=${#join_servers[@]}
+      log_info "Multi-Region Direct Join: Setting bootstrap_expect to total servers across all regions: $total_servers"
+      bootstrap_expect="\"bootstrap_expect\": $total_servers,"
+    else
+      # Single-region: use local ASG size
+      local instance_tags=""
+      local cluster_size=""
 
-    instance_tags=$(get_instance_tags "$instance_id" "$instance_region")
-    cluster_size=$(get_cluster_size "$instance_tags" "$instance_region")
+      instance_tags=$(get_instance_tags "$instance_id" "$instance_region")
+      cluster_size=$(get_cluster_size "$instance_tags" "$instance_region")
 
-    bootstrap_expect="\"bootstrap_expect\": $cluster_size,"
+      log_info "Single-region cluster: Setting bootstrap_expect to local ASG size: $cluster_size"
+      bootstrap_expect="\"bootstrap_expect\": $cluster_size,"
+    fi
     ui_config_enabled="true"
   fi
 
@@ -294,7 +326,7 @@ EOF
   "server_stabilization_time": "$server_stabilization_time",
   "redundancy_zone_tag": "$redundancy_zone_tag",
   "disable_upgrade_migration": $disable_upgrade_migration,
-  "upgrade_version_tag": "$upgrade_version_tag"
+  "upgrade_version_tag": "${upgrade_version_tag:-""}"
 },
 EOF
 )
@@ -452,6 +484,7 @@ function run {
   local redundancy_zone_tag="$DEFAULT_AUTOPILOT_REDUNDANCY_ZONE_TAG"
   local disable_upgrade_migration="$DEFAULT_AUTOPILOT_DISABLE_UPGRADE_MIGRATION"
   local wan_join=""
+  local retry_join=""
 
   while [[ $# -gt 0 ]]; do
     local key="$1"
@@ -589,6 +622,11 @@ function run {
         wan_join="$2"
         shift
         ;;
+      --retry-join)
+        assert_not_empty "$key" "$2"
+        retry_join="$2"
+        shift
+        ;;
       --help)
         print_usage
         exit
@@ -659,6 +697,15 @@ function run {
       retry_join_wan_json+="]"
     fi
 
+    # Convert recursors array to comma-separated string
+    local recursors_string=""
+    if [[ ${#recursors[@]} -gt 0 ]]; then
+      IFS=',' 
+      recursors_string="${recursors[*]}"
+    fi
+    
+
+    
     generate_consul_config "$server" \
       "$config_dir" \
       "$user" \
@@ -680,7 +727,8 @@ function run {
       "$disable_upgrade_migration" \
       "$upgrade_version_tag" \
       "$retry_join_wan_json" \
-      "${recursors[@]}"
+      "$recursors_string" \
+      "$retry_join"
   fi
 
   generate_systemd_config "$SYSTEMD_CONFIG_PATH" "$config_dir" "$data_dir" "$systemd_stdout" "$systemd_stderr" "$bin_dir" "$user" "${environment[@]}"

@@ -83,6 +83,7 @@ The `run-consul` script accepts the following arguments:
 * `key-file-path` (optional): Path to the certificate key used to verify incoming connections. Must be specified with `enable-rpc-encryption`, `ca-file-path` and `cert-file-path`.
 * `skip-consul-config` (optional): If this flag is set, don't generate a Consul configuration file. This is useful if
   you have a custom configuration file and don't want to use any of of the default settings from `run-consul`.
+* `retry-join` (optional): A comma-separated list of Consul server addresses (IP or DNS) for Multi-Region Direct Join. When set, overrides AWS provider discovery for LAN joins. This enables creating a global Consul cluster across multiple regions.
 
 Options for Consul Autopilot:
 
@@ -99,7 +100,11 @@ Options for Consul Autopilot:
 Example:
 
 ```
+# Single-region cluster (using AWS provider discovery)
 /opt/consul/bin/run-consul --server --cluster-tag-key consul-cluster --cluster-tag-value prod-cluster
+
+# Multi-region cluster (using static retry-join list)
+/opt/consul/bin/run-consul --server --datacenter eu-central-1 --retry-join "server1.eu-central-1.example.com,server2.eu-central-1.example.com,server1.eu-west-2.example.com,server2.eu-west-2.example.com"
 ```
 
 

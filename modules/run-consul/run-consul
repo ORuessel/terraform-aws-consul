@@ -671,13 +671,13 @@ function run {
 
   if [[ -z "$datacenter" ]]; then
     if [[ -n "$retry_join" ]]; then
-      # For Multi-Region Direct Join, use a common datacenter name
+      # Multi-Region Direct Join: Use global datacenter for cross-region cluster
       datacenter="global"
-      log_info "Multi-Region Direct Join detected: Setting datacenter to 'global' for all regions"
+      log_info "Multi-Region Direct Join: Using 'global' as datacenter for cross-region cluster"
     else
-      # Single-region or Federation: use AWS region as datacenter
+      # Single-region cluster: Use AWS region as datacenter
       datacenter=$(get_instance_region)
-      log_info "Single-region or Federation cluster: Using AWS region '$datacenter' as datacenter"
+      log_info "Single-region cluster: Using AWS region '$datacenter' as datacenter"
     fi
   fi
 

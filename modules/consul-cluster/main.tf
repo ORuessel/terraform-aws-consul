@@ -49,15 +49,7 @@ resource "aws_autoscaling_group" "autoscaling_group" {
     propagate_at_launch = true
   }
 
-  # ServerIndex-Tag für jede Instanz
-  dynamic "tag" {
-    for_each = toset([for idx in range(var.cluster_size) : idx + 1])
-    content {
-      key                 = "ServerIndex"
-      value               = tostring(tag.value)
-      propagate_at_launch = true
-    }
-  }
+  # ServerIndex-Tag wird jetzt im User-Data gesetzt, nicht mehr hier
   # Zusätzliche Tags aus var.tags
   dynamic "tag" {
     for_each = var.tags
